@@ -12,6 +12,8 @@ def show_mask(mask, ax, random_color=False):
     else:
         # Blue color default
         color = np.array([30/255, 144/255, 255/255, 0.6])
+    
+    # Ensure mask is boolean or 0/1
     h, w = mask.shape[-2:]
     mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
     ax.imshow(mask_image)
@@ -59,11 +61,12 @@ output = processor.add_geometric_prompt(
 masks = output["masks"]
 scores = output["scores"]
 
-# SAM 3 usually returns multiple masks (multimask output). 
-# We pick the one with the highest predicted IoU score.
+# Pick the one with the highest predicted IoU score.
 best_mask_idx = scores.argmax()
-best_mask = masks[best_mask_idx]
-best_score = scores[best_mask_idx]
+
+# --- THE FIX IS HERE: Convert from CUDA Tensor to CPU NumPy ---
+best_mask = masks[best_mask_idx].cpu().numpy()
+best_score = scores[best_mask_idx].item()
 
 print(f"Success! Best Mask Score: {best_score:.3f}")
 
