@@ -3,8 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SAM3 Image Annotation Tool</title>
+    <title>SAM 3 • Segment Anything</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #121212;
+            --bg-tertiary: #1a1a1a;
+            --bg-elevated: #1e1e1e;
+            --accent-blue: #0084ff;
+            --accent-purple: #8b5cf6;
+            --accent-gradient: linear-gradient(135deg, #0084ff 0%, #8b5cf6 100%);
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0a0;
+            --text-tertiary: #666666;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(255, 255, 255, 0.16);
+            --success: #10b981;
+            --error: #ef4444;
+            --warning: #f59e0b;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -12,294 +33,577 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
             min-height: 100vh;
-            padding: 20px;
+            overflow-x: hidden;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* Animated background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at 20% 50%, rgba(0, 132, 255, 0.08) 0%, transparent 50%),
+                        radial-gradient(circle at 80% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
         }
 
         .container {
-            max-width: 1400px;
+            max-width: 1600px;
             margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            padding: 30px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px 20px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 60px;
+            animation: fadeInDown 0.6s ease-out;
+        }
+
+        .logo {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .logo-icon {
+            width: 48px;
+            height: 48px;
+            background: var(--accent-gradient);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
         }
 
         h1 {
-            text-align: center;
-            color: #333;
-            margin-bottom: 10px;
-            font-size: 2.5em;
+            font-size: 48px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, #ffffff 0%, #a0a0a0 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 12px;
         }
 
         .subtitle {
-            text-align: center;
-            color: #666;
-            margin-bottom: 30px;
-            font-size: 1.1em;
+            font-size: 18px;
+            color: var(--text-secondary);
+            font-weight: 400;
         }
 
+        .meta-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-top: 12px;
+            letter-spacing: 0.5px;
+        }
+
+        /* Upload Section */
         .upload-section {
-            text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 40px;
+            animation: fadeIn 0.8s ease-out 0.2s both;
         }
 
         .upload-box {
-            border: 3px dashed #667eea;
-            border-radius: 10px;
-            padding: 40px;
-            background: #f8f9ff;
+            background: var(--bg-secondary);
+            border: 2px dashed var(--border-color);
+            border-radius: 16px;
+            padding: 60px 40px;
+            text-align: center;
             cursor: pointer;
-            transition: all 0.3s;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--accent-gradient);
+            opacity: 0;
+            transition: opacity 0.3s ease;
         }
 
         .upload-box:hover {
-            background: #f0f2ff;
-            border-color: #764ba2;
+            border-color: var(--border-hover);
+            background: var(--bg-tertiary);
+            transform: translateY(-2px);
+        }
+
+        .upload-box:hover::before {
+            opacity: 0.05;
         }
 
         .upload-box.dragover {
-            background: #e8ebff;
-            border-color: #764ba2;
+            border-color: var(--accent-blue);
+            background: rgba(0, 132, 255, 0.05);
+        }
+
+        .upload-box.dragover::before {
+            opacity: 0.1;
+        }
+
+        .upload-content {
+            position: relative;
+            z-index: 1;
+        }
+
+        .upload-icon {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 20px;
+            background: var(--bg-elevated);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+        }
+
+        .upload-text {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+
+        .upload-hint {
+            font-size: 14px;
+            color: var(--text-tertiary);
         }
 
         #fileInput {
             display: none;
         }
 
-        .upload-text {
-            font-size: 1.2em;
-            color: #667eea;
-            margin-bottom: 10px;
+        /* Status Messages */
+        .status {
+            padding: 16px 24px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            font-size: 14px;
+            font-weight: 500;
+            display: none;
+            align-items: center;
+            gap: 12px;
+            backdrop-filter: blur(10px);
+            animation: slideInDown 0.3s ease-out;
         }
 
-        .upload-hint {
-            color: #999;
-            font-size: 0.9em;
+        .status.show {
+            display: flex;
         }
 
+        .status.info {
+            background: rgba(0, 132, 255, 0.1);
+            border: 1px solid rgba(0, 132, 255, 0.2);
+            color: #60a5fa;
+        }
+
+        .status.success {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            color: #34d399;
+        }
+
+        .status.error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            color: #f87171;
+        }
+
+        /* Main Content */
         .main-content {
             display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 30px;
-            margin-top: 30px;
+            grid-template-columns: 1fr 400px;
+            gap: 32px;
+            animation: fadeIn 0.8s ease-out 0.4s both;
         }
 
-        .canvas-section {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 20px;
-            position: relative;
+        .canvas-section, .controls-section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
         }
 
+        /* Canvas */
         .canvas-container {
             position: relative;
-            display: inline-block;
-            cursor: crosshair;
-            max-width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: var(--bg-primary);
+            border-radius: 12px;
+            overflow: hidden;
+            min-height: 400px;
         }
 
         #imageCanvas {
             max-width: 100%;
+            max-height: 70vh;
             height: auto;
+            display: block;
+            cursor: crosshair;
             border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
 
-        .controls-section {
-            background: #f8f9fa;
-            border-radius: 10px;
+        /* Instructions */
+        .instructions {
+            background: rgba(139, 92, 246, 0.05);
+            border: 1px solid rgba(139, 92, 246, 0.2);
+            border-radius: 12px;
             padding: 20px;
+            margin-bottom: 24px;
         }
 
+        .instructions h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent-purple);
+            margin-bottom: 12px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .instructions li {
+            margin-bottom: 8px;
+            padding-left: 8px;
+        }
+
+        /* Controls */
         .control-group {
-            margin-bottom: 25px;
+            margin-bottom: 24px;
         }
 
         .control-group label {
             display: block;
-            margin-bottom: 8px;
+            font-size: 13px;
             font-weight: 600;
-            color: #333;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
         }
 
         input[type="text"] {
             width: 100%;
-            padding: 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 1em;
-            transition: border-color 0.3s;
+            padding: 14px 16px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            color: var(--text-primary);
+            font-size: 15px;
+            font-family: inherit;
+            transition: all 0.2s ease;
         }
 
         input[type="text"]:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: var(--accent-blue);
+            background: var(--bg-tertiary);
+            box-shadow: 0 0 0 3px rgba(0, 132, 255, 0.1);
         }
 
+        input[type="text"]::placeholder {
+            color: var(--text-tertiary);
+        }
+
+        /* Buttons */
         .btn {
             width: 100%;
-            padding: 14px;
+            padding: 14px 24px;
             border: none;
-            border-radius: 8px;
-            font-size: 1em;
+            border-radius: 10px;
+            font-size: 15px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s;
-            margin-bottom: 10px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            margin-bottom: 12px;
+            font-family: inherit;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            transform: translate(-50%, -50%);
+            transition: width 0.4s, height 0.4s;
+        }
+
+        .btn:hover::before {
+            width: 300px;
+            height: 300px;
+        }
+
+        .btn span {
+            position: relative;
+            z-index: 1;
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background: var(--accent-gradient);
+            color: var(--text-primary);
+            box-shadow: 0 4px 12px rgba(0, 132, 255, 0.2);
         }
 
         .btn-primary:hover:not(:disabled) {
+            box-shadow: 0 6px 20px rgba(0, 132, 255, 0.3);
             transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:active:not(:disabled) {
+            transform: translateY(0);
         }
 
         .btn-secondary {
-            background: #6c757d;
-            color: white;
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
         }
 
         .btn-secondary:hover:not(:disabled) {
-            background: #5a6268;
+            background: var(--bg-tertiary);
+            border-color: var(--border-hover);
         }
 
         .btn-success {
-            background: #28a745;
+            background: var(--success);
             color: white;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
         }
 
         .btn-success:hover:not(:disabled) {
-            background: #218838;
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.3);
+            transform: translateY(-2px);
         }
 
         .btn:disabled {
             opacity: 0.5;
             cursor: not-allowed;
+            transform: none !important;
         }
 
-        .status {
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            font-size: 0.95em;
-            display: none;
-        }
-
-        .status.info {
-            background: #d1ecf1;
-            color: #0c5460;
-            border: 1px solid #bee5eb;
-        }
-
-        .status.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-
-        .status.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-
-        .status.show {
-            display: block;
+        /* Results Section */
+        .results-header {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
         }
 
         .masks-preview {
-            max-height: 400px;
+            max-height: 500px;
             overflow-y: auto;
+            margin-top: 16px;
+        }
+
+        .masks-preview::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .masks-preview::-webkit-scrollbar-track {
+            background: var(--bg-primary);
+            border-radius: 10px;
+        }
+
+        .masks-preview::-webkit-scrollbar-thumb {
+            background: var(--bg-elevated);
+            border-radius: 10px;
+        }
+
+        .masks-preview::-webkit-scrollbar-thumb:hover {
+            background: var(--border-hover);
         }
 
         .mask-item {
-            background: white;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 15px;
-            border: 2px solid #e0e0e0;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            transition: all 0.2s ease;
+        }
+
+        .mask-item:hover {
+            border-color: var(--border-hover);
+            transform: translateY(-2px);
         }
 
         .mask-item h4 {
-            margin-bottom: 10px;
-            color: #333;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 12px;
         }
 
         .mask-preview-img {
             width: 100%;
-            border-radius: 6px;
-            margin-bottom: 10px;
-        }
-
-        .instructions {
-            background: #fff3cd;
-            border: 1px solid #ffc107;
             border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 20px;
+            margin-bottom: 12px;
+            border: 1px solid var(--border-color);
         }
 
-        .instructions h3 {
-            color: #856404;
-            margin-bottom: 10px;
-            font-size: 1.1em;
+        /* Loader */
+        .loader {
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-top-color: var(--text-primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+            margin-right: 8px;
+            vertical-align: middle;
         }
 
-        .instructions ol {
-            margin-left: 20px;
-            color: #856404;
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
 
-        .instructions li {
-            margin-bottom: 5px;
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
-        .drawing-box {
-            position: absolute;
-            border: 3px solid #ff0000;
-            background: rgba(255, 0, 0, 0.1);
-            pointer-events: none;
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
+        @keyframes slideInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Responsive */
         @media (max-width: 1024px) {
             .main-content {
                 grid-template-columns: 1fr;
             }
+
+            h1 {
+                font-size: 36px;
+            }
+
+            .controls-section {
+                order: -1;
+            }
         }
 
-        .loader {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 1s linear infinite;
-            display: inline-block;
-            margin-right: 10px;
+        @media (max-width: 640px) {
+            .container {
+                padding: 20px 16px;
+            }
+
+            h1 {
+                font-size: 28px;
+            }
+
+            .subtitle {
+                font-size: 16px;
+            }
+
+            .upload-box {
+                padding: 40px 24px;
+            }
         }
 
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-tertiary);
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.3;
+        }
+
+        .empty-state-text {
+            font-size: 14px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎨 SAM3 Image Annotation Tool</h1>
-        <p class="subtitle">Upload an image and draw a box around the object you want to segment</p>
+        <div class="header">
+            <div class="logo">
+                <div class="logo-icon">🎯</div>
+            </div>
+            <h1>SAM 3</h1>
+            <p class="subtitle">Segment Anything with Concepts</p>
+            <span class="meta-badge">Powered by Meta AI</span>
+        </div>
 
         <div class="upload-section">
             <div class="upload-box" id="uploadBox">
-                <div class="upload-text">📁 Click to upload or drag and drop</div>
-                <div class="upload-hint">Supported formats: JPG, PNG, WebP</div>
+                <div class="upload-content">
+                    <div class="upload-icon">📁</div>
+                    <div class="upload-text">Drop your image here</div>
+                    <div class="upload-hint">or click to browse • JPG, PNG, WebP supported</div>
+                </div>
                 <input type="file" id="fileInput" accept="image/*">
             </div>
         </div>
@@ -309,12 +613,12 @@
         <div class="main-content" id="mainContent" style="display: none;">
             <div class="canvas-section">
                 <div class="instructions">
-                    <h3>📝 How to use:</h3>
+                    <h3>How to use</h3>
                     <ol>
-                        <li>Click and drag on the image to draw a box around the object</li>
-                        <li>Optionally, add a text description of what you're looking for</li>
-                        <li>Click "Segment Image" to detect the object</li>
-                        <li>Download the masked image when ready</li>
+                        <li>Click and drag on the image to draw a bounding box</li>
+                        <li>Optionally add a text prompt to describe the object</li>
+                        <li>Click "Segment Image" to detect and mask objects</li>
+                        <li>Download your masked image with transparent background</li>
                     </ol>
                 </div>
                 <div class="canvas-container" id="canvasContainer">
@@ -324,21 +628,26 @@
 
             <div class="controls-section">
                 <div class="control-group">
-                    <label for="textPrompt">Text Prompt (Optional):</label>
-                    <input type="text" id="textPrompt" placeholder="e.g., 'cat', 'person', 'car'...">
+                    <label for="textPrompt">Text Prompt (Optional)</label>
+                    <input type="text" id="textPrompt" placeholder="e.g., person, cat, car">
                 </div>
 
                 <button class="btn btn-primary" id="segmentBtn" disabled>
-                    Segment Image
+                    <span>Segment Image</span>
                 </button>
 
                 <button class="btn btn-secondary" id="clearBtn">
-                    Clear Box
+                    <span>Clear Selection</span>
                 </button>
 
                 <div class="control-group">
-                    <h3 style="margin-bottom: 15px;">Results:</h3>
-                    <div id="masksPreview" class="masks-preview"></div>
+                    <div class="results-header">Results</div>
+                    <div id="masksPreview" class="masks-preview">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">✨</div>
+                            <div class="empty-state-text">Segment an image to see results</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -442,7 +751,7 @@
                 const data = await response.json();
 
                 if (response.ok) {
-                    showStatus('Image uploaded successfully!', 'success');
+                    showStatus('✓ Image uploaded successfully', 'success');
                     loadImageToCanvas(file);
                     mainContent.style.display = 'grid';
                 } else {
@@ -460,14 +769,9 @@
                 const img = new Image();
                 img.onload = () => {
                     currentImage = img;
-
-                    // Set canvas size to match image
                     canvas.width = img.width;
                     canvas.height = img.height;
-
-                    // Draw image
                     drawCanvas();
-
                     imageLoaded = true;
                 };
                 img.src = e.target.result;
@@ -479,16 +783,15 @@
         function drawCanvas() {
             if (!currentImage) return;
 
-            // Clear canvas
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Draw image
             ctx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
 
-            // Draw box if exists
             if (currentBox) {
-                ctx.strokeStyle = '#ff0000';
+                // Draw glowing box
+                ctx.strokeStyle = '#0084ff';
                 ctx.lineWidth = 3;
+                ctx.shadowColor = '#0084ff';
+                ctx.shadowBlur = 15;
                 ctx.strokeRect(
                     currentBox.x,
                     currentBox.y,
@@ -496,8 +799,8 @@
                     currentBox.height
                 );
 
-                // Draw semi-transparent fill
-                ctx.fillStyle = 'rgba(255, 0, 0, 0.1)';
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = 'rgba(0, 132, 255, 0.1)';
                 ctx.fillRect(
                     currentBox.x,
                     currentBox.y,
@@ -549,11 +852,11 @@
 
             if (currentBox && currentBox.width > 10 && currentBox.height > 10) {
                 segmentBtn.disabled = false;
-                showStatus('Box drawn! Click "Segment Image" to continue.', 'info');
+                showStatus('✓ Box drawn • Click "Segment Image" to continue', 'info');
             } else {
                 currentBox = null;
                 drawCanvas();
-                showStatus('Box too small. Please draw a larger box.', 'error');
+                showStatus('Box too small • Please draw a larger box', 'error');
             }
         }
 
@@ -561,9 +864,14 @@
         function clearBox() {
             currentBox = null;
             segmentBtn.disabled = true;
-            masksPreview.innerHTML = '';
+            masksPreview.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">✨</div>
+                    <div class="empty-state-text">Segment an image to see results</div>
+                </div>
+            `;
             drawCanvas();
-            showStatus('Box cleared', 'info');
+            showStatus('Selection cleared', 'info');
         }
 
         // Convert box to normalized coordinates
@@ -583,9 +891,10 @@
                 return;
             }
 
-            showStatus('Segmenting image... This may take a moment.', 'info');
+            showStatus('Segmenting image...', 'info');
             segmentBtn.disabled = true;
-            segmentBtn.innerHTML = '<span class="loader"></span> Segmenting...';
+            const originalHTML = segmentBtn.innerHTML;
+            segmentBtn.innerHTML = '<span><span class="loader"></span> Segmenting...</span>';
 
             const normalizedBox = boxToNormalized(currentBox);
 
@@ -616,9 +925,9 @@
 
                 if (response.ok) {
                     if (data.status === 'no_objects') {
-                        showStatus('No objects detected. Try adjusting the box or text prompt.', 'error');
+                        showStatus('No objects detected • Try adjusting the box or text prompt', 'error');
                     } else {
-                        showStatus(`✓ Segmented ${data.num_masks} object(s)!`, 'success');
+                        showStatus(`✓ Segmented ${data.num_masks} object(s)`, 'success');
                         await loadMaskPreviews();
                     }
                 } else {
@@ -628,7 +937,7 @@
                 showStatus(`Segmentation failed: ${error.message}`, 'error');
             } finally {
                 segmentBtn.disabled = false;
-                segmentBtn.innerHTML = 'Segment Image';
+                segmentBtn.innerHTML = originalHTML;
             }
         }
 
@@ -644,10 +953,17 @@
                             <h4>Mask ${i + 1}</h4>
                             <img src="${mask.preview}" class="mask-preview-img" alt="Mask ${i + 1}">
                             <button class="btn btn-success" onclick="downloadMask(${i})">
-                                Download Masked Image
+                                <span>Download Masked Image</span>
                             </button>
                         </div>
                     `).join('');
+                } else {
+                    masksPreview.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">❌</div>
+                            <div class="empty-state-text">No masks detected</div>
+                        </div>
+                    `;
                 }
             } catch (error) {
                 console.error('Error loading previews:', error);
@@ -662,12 +978,12 @@
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `masked_image_${index}.png`;
+                a.download = `sam3_masked_${index}_${Date.now()}.png`;
                 document.body.appendChild(a);
                 a.click();
                 window.URL.revokeObjectURL(url);
                 document.body.removeChild(a);
-                showStatus('Download started!', 'success');
+                showStatus('✓ Download started', 'success');
             } catch (error) {
                 showStatus(`Download failed: ${error.message}`, 'error');
             }
