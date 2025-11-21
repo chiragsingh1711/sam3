@@ -49,6 +49,8 @@ class SegmentRequest(BaseModel):
     """Request for segmentation with box prompt"""
     box: BoxPrompt
     text_prompt: Optional[str] = None
+    confidence_threshold: Optional[float] = 0.5  # Filter detections by confidence
+    mask_threshold: Optional[float] = 0.6  # Binarize masks (higher = cleaner, try 0.6-0.8)
 
 
 @app.on_event("startup")
@@ -58,7 +60,8 @@ async def startup_event():
     print("Loading SAM3 model...")
     try:
         model = build_sam3_image_model()
-        processor = Sam3Processor(model, device="cuda" if torch.cuda.is_available() else "cpu")
+        # Use higher default confidence threshold for better quality
+        processor = Sam3Processor(model, device="cuda" if torch.cuda.is_available() else "cpu", confidence_threshold=0.5)
         print(f"SAM3 model loaded successfully on {processor.device}")
     except Exception as e:
         print(f"Error loading model: {e}")
@@ -95,7 +98,7 @@ async def upload_image(file: UploadFile = File(...)):
     if model is None:
         print("Loading SAM3 model...")
         model = build_sam3_image_model()
-        processor = Sam3Processor(model, device="cuda" if torch.cuda.is_available() else "cpu")
+        processor = Sam3Processor(model, device="cuda" if torch.cuda.is_available() else "cpu", confidence_threshold=0.5)
         print(f"SAM3 model loaded successfully on {processor.device}")
 
     try:
@@ -132,6 +135,10 @@ async def segment_image(request: SegmentRequest):
         raise HTTPException(status_code=400, detail="No image uploaded. Please upload an image first.")
 
     try:
+        # Set confidence threshold if provided
+        if request.confidence_threshold is not None:
+            processor.set_confidence_threshold(request.confidence_threshold)
+
         # Reset previous prompts
         processor.reset_all_prompts(current_state)
 
@@ -151,7 +158,15 @@ async def segment_image(request: SegmentRequest):
         ]
         current_state = processor.add_geometric_prompt(box, request.box.label, current_state)
 
-        # Get results
+        # Apply custom mask threshold if provided (for cleaner masks)
+        mask_threshold = request.mask_threshold if request.mask_threshold is not None else 0.6
+
+        # Get results with custom mask threshold
+        masks_logits = current_state.get("masks_logits")
+        if masks_logits is not None:
+            # Re-binarize masks with custom threshold
+            current_state["masks"] = masks_logits > mask_threshold
+
         masks = current_state.get("masks")
         boxes = current_state.get("boxes")
         scores = current_state.get("scores")
