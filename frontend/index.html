@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAM3 Image Annotation Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+
+        .upload-section {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .upload-box {
+            border: 3px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            background: #f8f9ff;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .upload-box:hover {
+            background: #f0f2ff;
+            border-color: #764ba2;
+        }
+
+        .upload-box.dragover {
+            background: #e8ebff;
+            border-color: #764ba2;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .upload-text {
+            font-size: 1.2em;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .upload-hint {
+            color: #999;
+            font-size: 0.9em;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 30px;
+            margin-top: 30px;
+        }
+
+        .canvas-section {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            position: relative;
+        }
+
+        .canvas-container {
+            position: relative;
+            display: inline-block;
+            cursor: crosshair;
+            max-width: 100%;
+        }
+
+        #imageCanvas {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .controls-section {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        .control-group {
+            margin-bottom: 25px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: #5a6268;
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover:not(:disabled) {
+            background: #218838;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .status {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 0.95em;
+            display: none;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.show {
+            display: block;
+        }
+
+        .masks-preview {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .mask-item {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            border: 2px solid #e0e0e0;
+        }
+
+        .mask-item h4 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .mask-preview-img {
+            width: 100%;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+
+        .instructions {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .instructions h3 {
+            color: #856404;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+            color: #856404;
+        }
+
+        .instructions li {
+            margin-bottom: 5px;
+        }
+
+        .drawing-box {
+            position: absolute;
+            border: 3px solid #ff0000;
+            background: rgba(255, 0, 0, 0.1);
+            pointer-events: none;
+        }
+
+        @media (max-width: 1024px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 SAM3 Image Annotation Tool</h1>
+        <p class="subtitle">Upload an image and draw a box around the object you want to segment</p>
+
+        <div class="upload-section">
+            <div class="upload-box" id="uploadBox">
+                <div class="upload-text">📁 Click to upload or drag and drop</div>
+                <div class="upload-hint">Supported formats: JPG, PNG, WebP</div>
+                <input type="file" id="fileInput" accept="image/*">
+            </div>
+        </div>
+
+        <div id="status" class="status"></div>
+
+        <div class="main-content" id="mainContent" style="display: none;">
+            <div class="canvas-section">
+                <div class="instructions">
+                    <h3>📝 How to use:</h3>
+                    <ol>
+                        <li>Click and drag on the image to draw a box around the object</li>
+                        <li>Optionally, add a text description of what you're looking for</li>
+                        <li>Click "Segment Image" to detect the object</li>
+                        <li>Download the masked image when ready</li>
+                    </ol>
+                </div>
+                <div class="canvas-container" id="canvasContainer">
+                    <canvas id="imageCanvas"></canvas>
+                </div>
+            </div>
+
+            <div class="controls-section">
+                <div class="control-group">
+                    <label for="textPrompt">Text Prompt (Optional):</label>
+                    <input type="text" id="textPrompt" placeholder="e.g., 'cat', 'person', 'car'...">
+                </div>
+
+                <button class="btn btn-primary" id="segmentBtn" disabled>
+                    Segment Image
+                </button>
+
+                <button class="btn btn-secondary" id="clearBtn">
+                    Clear Box
+                </button>
+
+                <div class="control-group">
+                    <h3 style="margin-bottom: 15px;">Results:</h3>
+                    <div id="masksPreview" class="masks-preview"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const API_BASE_URL = 'http://136.112.178.210:8000';
+
+        // State
+        let currentImage = null;
+        let canvas = null;
+        let ctx = null;
+        let isDrawing = false;
+        let startX = 0;
+        let startY = 0;
+        let currentBox = null;
+        let imageLoaded = false;
+
+        // DOM Elements
+        const uploadBox = document.getElementById('uploadBox');
+        const fileInput = document.getElementById('fileInput');
+        const mainContent = document.getElementById('mainContent');
+        const statusDiv = document.getElementById('status');
+        const imageCanvas = document.getElementById('imageCanvas');
+        const segmentBtn = document.getElementById('segmentBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const textPrompt = document.getElementById('textPrompt');
+        const masksPreview = document.getElementById('masksPreview');
+
+        // Initialize
+        function init() {
+            canvas = imageCanvas;
+            ctx = canvas.getContext('2d');
+
+            // Upload box events
+            uploadBox.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', handleFileSelect);
+
+            // Drag and drop
+            uploadBox.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadBox.classList.add('dragover');
+            });
+
+            uploadBox.addEventListener('dragleave', () => {
+                uploadBox.classList.remove('dragover');
+            });
+
+            uploadBox.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadBox.classList.remove('dragover');
+                const file = e.dataTransfer.files[0];
+                if (file && file.type.startsWith('image/')) {
+                    uploadImage(file);
+                }
+            });
+
+            // Canvas events
+            canvas.addEventListener('mousedown', handleMouseDown);
+            canvas.addEventListener('mousemove', handleMouseMove);
+            canvas.addEventListener('mouseup', handleMouseUp);
+
+            // Button events
+            segmentBtn.addEventListener('click', handleSegment);
+            clearBtn.addEventListener('click', clearBox);
+        }
+
+        // Show status message
+        function showStatus(message, type = 'info') {
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type} show`;
+            setTimeout(() => {
+                if (type !== 'error') {
+                    statusDiv.classList.remove('show');
+                }
+            }, 5000);
+        }
+
+        // Handle file selection
+        function handleFileSelect(e) {
+            const file = e.target.files[0];
+            if (file) {
+                uploadImage(file);
+            }
+        }
+
+        // Upload image to backend
+        async function uploadImage(file) {
+            showStatus('Uploading image...', 'info');
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showStatus('Image uploaded successfully!', 'success');
+                    loadImageToCanvas(file);
+                    mainContent.style.display = 'grid';
+                } else {
+                    showStatus(`Error: ${data.detail}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`Upload failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Load image to canvas
+        function loadImageToCanvas(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    currentImage = img;
+
+                    // Set canvas size to match image
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+
+                    // Draw image
+                    drawCanvas();
+
+                    imageLoaded = true;
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Draw canvas (image + box)
+        function drawCanvas() {
+            if (!currentImage) return;
+
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw image
+            ctx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
+
+            // Draw box if exists
+            if (currentBox) {
+                ctx.strokeStyle = '#ff0000';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(
+                    currentBox.x,
+                    currentBox.y,
+                    currentBox.width,
+                    currentBox.height
+                );
+
+                // Draw semi-transparent fill
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.1)';
+                ctx.fillRect(
+                    currentBox.x,
+                    currentBox.y,
+                    currentBox.width,
+                    currentBox.height
+                );
+            }
+        }
+
+        // Mouse event handlers
+        function handleMouseDown(e) {
+            if (!imageLoaded) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+
+            startX = (e.clientX - rect.left) * scaleX;
+            startY = (e.clientY - rect.top) * scaleY;
+            isDrawing = true;
+        }
+
+        function handleMouseMove(e) {
+            if (!isDrawing) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+
+            const currentX = (e.clientX - rect.left) * scaleX;
+            const currentY = (e.clientY - rect.top) * scaleY;
+
+            const width = currentX - startX;
+            const height = currentY - startY;
+
+            currentBox = {
+                x: Math.min(startX, currentX),
+                y: Math.min(startY, currentY),
+                width: Math.abs(width),
+                height: Math.abs(height)
+            };
+
+            drawCanvas();
+        }
+
+        function handleMouseUp(e) {
+            if (!isDrawing) return;
+            isDrawing = false;
+
+            if (currentBox && currentBox.width > 10 && currentBox.height > 10) {
+                segmentBtn.disabled = false;
+                showStatus('Box drawn! Click "Segment Image" to continue.', 'info');
+            } else {
+                currentBox = null;
+                drawCanvas();
+                showStatus('Box too small. Please draw a larger box.', 'error');
+            }
+        }
+
+        // Clear box
+        function clearBox() {
+            currentBox = null;
+            segmentBtn.disabled = true;
+            masksPreview.innerHTML = '';
+            drawCanvas();
+            showStatus('Box cleared', 'info');
+        }
+
+        // Convert box to normalized coordinates
+        function boxToNormalized(box) {
+            const centerX = (box.x + box.width / 2) / canvas.width;
+            const centerY = (box.y + box.height / 2) / canvas.height;
+            const width = box.width / canvas.width;
+            const height = box.height / canvas.height;
+
+            return { centerX, centerY, width, height };
+        }
+
+        // Handle segmentation
+        async function handleSegment() {
+            if (!currentBox) {
+                showStatus('Please draw a box first', 'error');
+                return;
+            }
+
+            showStatus('Segmenting image... This may take a moment.', 'info');
+            segmentBtn.disabled = true;
+            segmentBtn.innerHTML = '<span class="loader"></span> Segmenting...';
+
+            const normalizedBox = boxToNormalized(currentBox);
+
+            const requestData = {
+                box: {
+                    center_x: normalizedBox.centerX,
+                    center_y: normalizedBox.centerY,
+                    width: normalizedBox.width,
+                    height: normalizedBox.height,
+                    label: true
+                }
+            };
+
+            if (textPrompt.value.trim()) {
+                requestData.text_prompt = textPrompt.value.trim();
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/segment`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    if (data.status === 'no_objects') {
+                        showStatus('No objects detected. Try adjusting the box or text prompt.', 'error');
+                    } else {
+                        showStatus(`✓ Segmented ${data.num_masks} object(s)!`, 'success');
+                        await loadMaskPreviews();
+                    }
+                } else {
+                    showStatus(`Error: ${data.detail}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`Segmentation failed: ${error.message}`, 'error');
+            } finally {
+                segmentBtn.disabled = false;
+                segmentBtn.innerHTML = 'Segment Image';
+            }
+        }
+
+        // Load mask previews
+        async function loadMaskPreviews() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/preview_masks`);
+                const data = await response.json();
+
+                if (data.status === 'success' && data.masks.length > 0) {
+                    masksPreview.innerHTML = data.masks.map((mask, i) => `
+                        <div class="mask-item">
+                            <h4>Mask ${i + 1}</h4>
+                            <img src="${mask.preview}" class="mask-preview-img" alt="Mask ${i + 1}">
+                            <button class="btn btn-success" onclick="downloadMask(${i})">
+                                Download Masked Image
+                            </button>
+                        </div>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('Error loading previews:', error);
+            }
+        }
+
+        // Download mask
+        async function downloadMask(index) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/download_masked_image?mask_index=${index}`);
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `masked_image_${index}.png`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                showStatus('Download started!', 'success');
+            } catch (error) {
+                showStatus(`Download failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Initialize on load
+        init();
+    </script>
+</body>
+</html>
