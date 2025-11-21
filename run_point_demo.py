@@ -24,7 +24,7 @@ def show_points(coords, labels, ax, marker_size=375):
 
 # --- 1. CONFIGURATION ---
 # Change these two lines to match your specific image and desired point
-IMAGE_PATH = "path/to/your/image.jpg" 
+IMAGE_PATH = "image.jpg" 
 TARGET_X = 1195  # The X coordinate of your object
 TARGET_Y = 632   # The Y coordinate of your object
 
