@@ -564,7 +564,7 @@ async def segment_direct(
     Returns:
         PNG image with transparent background (best mask applied)
     """
-    global model, processor
+    global model, processor, current_state, current_image
 
     # Lazy load model if needed
     if model is None or processor is None:
@@ -601,35 +601,39 @@ async def segment_direct(
             print(f"Text prompt: '{text_prompt}'")
 
         # EXACT SAME WORKFLOW AS /upload + /segment
+        # Use GLOBAL variables to match the exact state management
 
-        # Step 1: Initial image set (like /upload)
-        state = processor.set_image(image)
+        # Step 1: Store image globally (like /upload does)
+        current_image = image
 
-        # Step 2: Set confidence threshold (like /segment)
+        # Step 2: Initial image set (like /upload)
+        current_state = processor.set_image(image)
+
+        # Step 3: Set confidence threshold (like /segment)
         processor.set_confidence_threshold(confidence_threshold)
 
-        # Step 3: Reset prompts (CRITICAL - was missing!)
-        processor.reset_all_prompts(state)
+        # Step 4: Reset prompts (like /segment)
+        processor.reset_all_prompts(current_state)
 
-        # Step 4: Re-set image to get fresh state (CRITICAL - was missing!)
-        state = processor.set_image(image, state)
+        # Step 5: Re-set image to get fresh state (like /segment)
+        current_state = processor.set_image(current_image, current_state)
 
-        # Step 5: Add text prompt if provided
+        # Step 6: Add text prompt if provided (like /segment)
         if text_prompt:
-            state = processor.set_text_prompt(text_prompt, state)
+            current_state = processor.set_text_prompt(text_prompt, current_state)
 
-        # Step 6: Add box prompt (as list: [center_x, center_y, width, height])
+        # Step 7: Add box prompt (like /segment)
         box = [box_center_x, box_center_y, box_width, box_height]
-        state = processor.add_geometric_prompt(box, True, state)
+        current_state = processor.add_geometric_prompt(box, True, current_state)
 
-        # Step 7: Apply custom mask threshold (CRITICAL - store back in state!)
-        masks_logits = state.get("masks_logits")
+        # Step 8: Apply custom mask threshold (like /segment)
+        masks_logits = current_state.get("masks_logits")
         if masks_logits is not None:
-            state["masks"] = masks_logits > mask_threshold
+            current_state["masks"] = masks_logits > mask_threshold
 
-        # Step 8: Get final results from state
-        masks = state.get("masks")
-        scores = state.get("scores")
+        # Step 9: Get final results from state (like /segment)
+        masks = current_state.get("masks")
+        scores = current_state.get("scores")
 
         if masks is None or len(masks) == 0:
             raise HTTPException(status_code=404, detail="No objects detected. Try adjusting the box or confidence threshold.")
@@ -644,12 +648,12 @@ async def segment_direct(
             best_score = None
             print(f"✓ Using first mask (no scores available)")
 
-        # Get best mask
+        # Get best mask (EXACT SAME as /download_masked_image)
         best_mask = masks[best_idx].squeeze().cpu().numpy()
 
         # Create masked image (EXACT SAME as /download_masked_image)
-        # Convert original image to RGBA
-        img_rgba = image.convert("RGBA")
+        # Convert original image to RGBA (use global current_image)
+        img_rgba = current_image.convert("RGBA")
         img_array = np.array(img_rgba)
 
         # Apply mask (keep masked region, make rest transparent)
