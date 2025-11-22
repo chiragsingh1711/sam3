@@ -662,6 +662,73 @@
             background: rgba(255, 255, 255, 0.2);
             color: var(--text-primary);
         }
+
+        /* Mode Selector */
+        .mode-selector {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+            padding: 6px;
+            background: var(--bg-primary);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        .mode-btn {
+            flex: 1;
+            padding: 12px 20px;
+            background: transparent;
+            border: none;
+            border-radius: 8px;
+            color: var(--text-secondary);
+            font-size: 14px;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .mode-btn:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .mode-btn.active {
+            background: var(--accent-gradient);
+            color: white;
+            box-shadow: 0 4px 12px rgba(0, 132, 255, 0.3);
+        }
+
+        .mode-btn-icon {
+            font-size: 18px;
+        }
+
+        /* Point Marker Styles */
+        .point-marker {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid white;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+            z-index: 10;
+        }
+
+        .point-marker.foreground {
+            background: #10b981;
+            border-color: white;
+        }
+
+        .point-marker.background {
+            background: #ef4444;
+            border-color: white;
+        }
     </style>
 </head>
 <body>
@@ -690,9 +757,20 @@
 
         <div class="main-content" id="mainContent" style="display: none;">
             <div class="canvas-section">
-                <div class="instructions">
+                <div class="mode-selector">
+                    <button class="mode-btn active" id="boxModeBtn" data-mode="box">
+                        <span class="mode-btn-icon">⬚</span>
+                        <span>Box Mode</span>
+                    </button>
+                    <button class="mode-btn" id="pointModeBtn" data-mode="point">
+                        <span class="mode-btn-icon">📍</span>
+                        <span>Point Mode</span>
+                    </button>
+                </div>
+
+                <div class="instructions" id="instructions">
                     <h3>How to use</h3>
-                    <ol>
+                    <ol id="instructionsList">
                         <li>Click and drag on the image to draw a bounding box</li>
                         <li>Optionally add a text prompt to describe the object</li>
                         <li>Click "Segment Image" to detect and mask objects</li>
@@ -768,6 +846,8 @@
         let startY = 0;
         let currentBox = null;
         let imageLoaded = false;
+        let currentMode = 'box'; // 'box' or 'point'
+        let points = []; // Array of {x, y, label} where label is 1 (foreground) or 0 (background)
 
         // DOM Elements
         const uploadBox = document.getElementById('uploadBox');
@@ -783,6 +863,10 @@
         const maskThresholdValue = document.getElementById('maskThresholdValue');
         const confidenceThreshold = document.getElementById('confidenceThreshold');
         const confidenceThresholdValue = document.getElementById('confidenceThresholdValue');
+        const boxModeBtn = document.getElementById('boxModeBtn');
+        const pointModeBtn = document.getElementById('pointModeBtn');
+        const instructionsList = document.getElementById('instructionsList');
+        const canvasContainer = document.getElementById('canvasContainer');
 
         // Initialize
         function init() {
@@ -816,6 +900,11 @@
             canvas.addEventListener('mousedown', handleMouseDown);
             canvas.addEventListener('mousemove', handleMouseMove);
             canvas.addEventListener('mouseup', handleMouseUp);
+            canvas.addEventListener('contextmenu', handleRightClick);
+
+            // Mode switch events
+            boxModeBtn.addEventListener('click', () => switchMode('box'));
+            pointModeBtn.addEventListener('click', () => switchMode('point'));
 
             // Button events
             segmentBtn.addEventListener('click', handleSegment);
@@ -829,6 +918,35 @@
             confidenceThreshold.addEventListener('input', (e) => {
                 confidenceThresholdValue.textContent = e.target.value;
             });
+        }
+
+        // Switch between box and point modes
+        function switchMode(mode) {
+            currentMode = mode;
+
+            // Update UI
+            if (mode === 'box') {
+                boxModeBtn.classList.add('active');
+                pointModeBtn.classList.remove('active');
+                instructionsList.innerHTML = `
+                    <li>Click and drag on the image to draw a bounding box</li>
+                    <li>Optionally add a text prompt to describe the object</li>
+                    <li>Click "Segment Image" to detect and mask objects</li>
+                    <li>Download your masked image with transparent background</li>
+                `;
+            } else {
+                pointModeBtn.classList.add('active');
+                boxModeBtn.classList.remove('active');
+                instructionsList.innerHTML = `
+                    <li><strong>Left-click</strong> to add foreground points (green)</li>
+                    <li><strong>Right-click</strong> to add background points (red)</li>
+                    <li>Add multiple points to refine the mask</li>
+                    <li>Click "Segment Image" to generate the mask</li>
+                `;
+            }
+
+            // Clear current selection
+            clearBox();
         }
 
         // Show status message
@@ -894,15 +1012,15 @@
             reader.readAsDataURL(file);
         }
 
-        // Draw canvas (image + box)
+        // Draw canvas (image + box + points)
         function drawCanvas() {
             if (!currentImage) return;
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
 
-            if (currentBox) {
-                // Draw glowing box
+            // Draw box if in box mode
+            if (currentBox && currentMode === 'box') {
                 ctx.strokeStyle = '#0084ff';
                 ctx.lineWidth = 3;
                 ctx.shadowColor = '#0084ff';
@@ -923,6 +1041,29 @@
                     currentBox.height
                 );
             }
+
+            // Draw points if in point mode
+            if (currentMode === 'point' && points.length > 0) {
+                points.forEach(point => {
+                    ctx.beginPath();
+                    ctx.arc(point.x, point.y, 6, 0, 2 * Math.PI);
+
+                    // Foreground points = green, Background points = red
+                    ctx.fillStyle = point.label === 1 ? '#10b981' : '#ef4444';
+                    ctx.fill();
+
+                    // White border
+                    ctx.strokeStyle = 'white';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    // Shadow for visibility
+                    ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+                    ctx.shadowBlur = 4;
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                });
+            }
         }
 
         // Mouse event handlers
@@ -933,13 +1074,25 @@
             const scaleX = canvas.width / rect.width;
             const scaleY = canvas.height / rect.height;
 
-            startX = (e.clientX - rect.left) * scaleX;
-            startY = (e.clientY - rect.top) * scaleY;
-            isDrawing = true;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+
+            if (currentMode === 'point') {
+                // Add foreground point (left-click)
+                points.push({ x, y, label: 1 });
+                drawCanvas();
+                segmentBtn.disabled = false;
+                showStatus(`✓ Added ${points.length} point${points.length > 1 ? 's' : ''} • Click "Segment Image" to continue`, 'info');
+            } else {
+                // Box mode - start drawing
+                startX = x;
+                startY = y;
+                isDrawing = true;
+            }
         }
 
         function handleMouseMove(e) {
-            if (!isDrawing) return;
+            if (!isDrawing || currentMode !== 'box') return;
 
             const rect = canvas.getBoundingClientRect();
             const scaleX = canvas.width / rect.width;
@@ -962,7 +1115,7 @@
         }
 
         function handleMouseUp(e) {
-            if (!isDrawing) return;
+            if (!isDrawing || currentMode !== 'box') return;
             isDrawing = false;
 
             if (currentBox && currentBox.width > 10 && currentBox.height > 10) {
@@ -975,9 +1128,29 @@
             }
         }
 
-        // Clear box
+        // Handle right-click for background points
+        function handleRightClick(e) {
+            e.preventDefault();
+            if (!imageLoaded || currentMode !== 'point') return;
+
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+
+            // Add background point (right-click)
+            points.push({ x, y, label: 0 });
+            drawCanvas();
+            segmentBtn.disabled = false;
+            showStatus(`✓ Added ${points.length} point${points.length > 1 ? 's' : ''} • Click "Segment Image" to continue`, 'info');
+        }
+
+        // Clear box and points
         function clearBox() {
             currentBox = null;
+            points = [];
             segmentBtn.disabled = true;
             masksPreview.innerHTML = `
                 <div class="empty-state">
@@ -1001,8 +1174,13 @@
 
         // Handle segmentation
         async function handleSegment() {
-            if (!currentBox) {
+            if (currentMode === 'box' && !currentBox) {
                 showStatus('Please draw a box first', 'error');
+                return;
+            }
+
+            if (currentMode === 'point' && points.length === 0) {
+                showStatus('Please add at least one point', 'error');
                 return;
             }
 
@@ -1011,44 +1189,63 @@
             const originalHTML = segmentBtn.innerHTML;
             segmentBtn.innerHTML = '<span><span class="loader"></span> Segmenting...</span>';
 
-            const normalizedBox = boxToNormalized(currentBox);
-
-            const requestData = {
-                box: {
-                    center_x: normalizedBox.centerX,
-                    center_y: normalizedBox.centerY,
-                    width: normalizedBox.width,
-                    height: normalizedBox.height,
-                    label: true
-                },
-                mask_threshold: parseFloat(maskThreshold.value),
-                confidence_threshold: parseFloat(confidenceThreshold.value)
-            };
-
-            if (textPrompt.value.trim()) {
-                requestData.text_prompt = textPrompt.value.trim();
-            }
-
             try {
-                const response = await fetch(`${API_BASE_URL}/segment`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(requestData)
-                });
+                let response, data;
 
-                const data = await response.json();
+                if (currentMode === 'box') {
+                    // Box-based segmentation
+                    const normalizedBox = boxToNormalized(currentBox);
 
-                if (response.ok) {
-                    if (data.status === 'no_objects') {
-                        showStatus('No objects detected • Try adjusting the box or text prompt', 'error');
-                    } else {
+                    const requestData = {
+                        box: {
+                            center_x: normalizedBox.centerX,
+                            center_y: normalizedBox.centerY,
+                            width: normalizedBox.width,
+                            height: normalizedBox.height,
+                            label: true
+                        },
+                        mask_threshold: parseFloat(maskThreshold.value),
+                        confidence_threshold: parseFloat(confidenceThreshold.value)
+                    };
+
+                    if (textPrompt.value.trim()) {
+                        requestData.text_prompt = textPrompt.value.trim();
+                    }
+
+                    response = await fetch(`${API_BASE_URL}/segment`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(requestData)
+                    });
+
+                    data = await response.json();
+
+                    if (response.ok && data.status !== 'no_objects') {
                         showStatus(`✓ Segmented ${data.num_masks} object(s)`, 'success');
-                        await loadMaskPreviews();
+                        await loadMaskPreviews('box');
+                    } else {
+                        showStatus('No objects detected • Try adjusting the box or text prompt', 'error');
                     }
                 } else {
-                    showStatus(`Error: ${data.detail}`, 'error');
+                    // Point-based segmentation
+                    const requestData = {
+                        points: points.map(p => ({ x: p.x, y: p.y, label: p.label }))
+                    };
+
+                    response = await fetch(`${API_BASE_URL}/segment_points`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(requestData)
+                    });
+
+                    data = await response.json();
+
+                    if (response.ok) {
+                        showStatus(`✓ Generated ${data.num_masks} mask(s)`, 'success');
+                        await loadMaskPreviews('point');
+                    } else {
+                        showStatus(`Error: ${data.detail}`, 'error');
+                    }
                 }
             } catch (error) {
                 showStatus(`Segmentation failed: ${error.message}`, 'error');
@@ -1059,17 +1256,17 @@
         }
 
         // Load mask previews
-        async function loadMaskPreviews() {
+        async function loadMaskPreviews(source) {
             try {
-                const response = await fetch(`${API_BASE_URL}/preview_masks`);
+                const response = await fetch(`${API_BASE_URL}/preview_masks?source=${source}`);
                 const data = await response.json();
 
                 if (data.status === 'success' && data.masks.length > 0) {
                     masksPreview.innerHTML = data.masks.map((mask, i) => `
                         <div class="mask-item">
-                            <h4>Mask ${i + 1}</h4>
+                            <h4>Mask ${i + 1} ${mask.score ? `(${(mask.score * 100).toFixed(1)}%)` : ''}</h4>
                             <img src="${mask.preview}" class="mask-preview-img" alt="Mask ${i + 1}">
-                            <button class="btn btn-success" onclick="downloadMask(${i})">
+                            <button class="btn btn-success" onclick="downloadMask(${i}, '${source}')">
                                 <span>Download Masked Image</span>
                             </button>
                         </div>
@@ -1088,14 +1285,14 @@
         }
 
         // Download mask
-        async function downloadMask(index) {
+        async function downloadMask(index, source) {
             try {
-                const response = await fetch(`${API_BASE_URL}/download_masked_image?mask_index=${index}`);
+                const response = await fetch(`${API_BASE_URL}/download_masked_image?mask_index=${index}&source=${source}`);
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `sam3_masked_${index}_${Date.now()}.png`;
+                a.download = `sam3_masked_${source}_${index}_${Date.now()}.png`;
                 document.body.appendChild(a);
                 a.click();
                 window.URL.revokeObjectURL(url);
