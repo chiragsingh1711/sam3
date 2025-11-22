@@ -81,8 +81,10 @@ async def startup_event():
         model = build_sam3_image_model()
         # Use higher default confidence threshold for better quality
         processor = Sam3Processor(model, device="cuda" if torch.cuda.is_available() else "cpu", confidence_threshold=0.5)
-        # Initialize interactive predictor for point-based segmentation
-        interactive_predictor = SAM3InteractiveImagePredictor(model)
+        # Use the built-in interactive predictor from the model
+        interactive_predictor = model.inst_interactive_predictor
+        if interactive_predictor is None:
+            print("Warning: Model does not have interactive predictor. Point-based segmentation will not be available.")
         print(f"SAM3 model loaded successfully on {processor.device}")
     except Exception as e:
         print(f"Error loading model: {e}")
@@ -120,7 +122,9 @@ async def upload_image(file: UploadFile = File(...)):
         print("Loading SAM3 model...")
         model = build_sam3_image_model()
         processor = Sam3Processor(model, device="cuda" if torch.cuda.is_available() else "cpu", confidence_threshold=0.5)
-        interactive_predictor = SAM3InteractiveImagePredictor(model)
+        interactive_predictor = model.inst_interactive_predictor
+        if interactive_predictor is None:
+            print("Warning: Model does not have interactive predictor. Point-based segmentation will not be available.")
         print(f"SAM3 model loaded successfully on {processor.device}")
 
     try:
@@ -139,10 +143,13 @@ async def upload_image(file: UploadFile = File(...)):
         # Set image in box-based processor
         current_state = processor.set_image(image)
 
-        # Set image in interactive predictor (computes embeddings)
-        print("Computing image embeddings for interactive segmentation...")
-        interactive_predictor.set_image(current_image_np)
-        print("✓ Image embeddings computed")
+        # Set image in interactive predictor (computes embeddings) - if available
+        if interactive_predictor is not None:
+            print("Computing image embeddings for interactive segmentation...")
+            interactive_predictor.set_image(current_image_np)
+            print("✓ Image embeddings computed")
+        else:
+            print("Note: Interactive predictor not available, point-based segmentation disabled")
 
         return {
             "status": "success",
@@ -225,10 +232,13 @@ async def segment_image(request: SegmentRequest):
 @app.post("/segment_points")
 async def segment_with_points(request: PointSegmentRequest):
     """Segment image using point prompts (interactive segmentation)"""
-    global point_masks, point_scores, interactive_predictor, current_image_np
+    global point_masks, point_scores, interactive_predictor, current_image_np, model
 
     if current_image_np is None:
         raise HTTPException(status_code=400, detail="No image uploaded. Please upload an image first.")
+
+    if interactive_predictor is None:
+        raise HTTPException(status_code=400, detail="Interactive predictor not available. Point-based segmentation is not supported.")
 
     if len(request.points) == 0:
         raise HTTPException(status_code=400, detail="At least one point is required.")
