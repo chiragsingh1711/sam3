@@ -603,31 +603,20 @@ async def segment_direct(
         # Set image in processor
         state = processor.set_image(image)
 
-        # Create box prompt
-        box_data = {
-            "center_x": box_center_x,
-            "center_y": box_center_y,
-            "width": box_width,
-            "height": box_height,
-            "label": True
-        }
+        # Set confidence threshold
+        processor.set_confidence_threshold(confidence_threshold)
 
-        # Build prompts for processor
-        prompts = {"boxes": [box_data]}
+        # Add text prompt if provided
         if text_prompt:
-            prompts["text"] = [text_prompt]
+            state = processor.set_text_prompt(text_prompt, state)
 
-        # Run segmentation
-        outputs = processor.process(
-            image=image,
-            prompts=prompts,
-            mask_threshold=mask_threshold,
-            confidence_threshold=confidence_threshold
-        )
+        # Add box prompt (as list: [center_x, center_y, width, height])
+        box = [box_center_x, box_center_y, box_width, box_height]
+        state = processor.add_geometric_prompt(box, True, state)
 
-        # Extract masks
-        masks_logits = outputs.get("masks")
-        scores = outputs.get("scores")
+        # Get results
+        masks_logits = state.get("masks_logits")
+        scores = state.get("scores")
 
         if masks_logits is None or len(masks_logits) == 0:
             raise HTTPException(status_code=404, detail="No objects detected. Try adjusting the box or confidence threshold.")
