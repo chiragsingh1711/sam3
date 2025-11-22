@@ -88,6 +88,15 @@ async def startup_event():
             print("Warning: Model does not have interactive predictor. Point-based segmentation will not be available.")
         else:
             print("✓ Interactive predictor enabled for point-based segmentation")
+            # CRITICAL FIX: Move the tracker model to the same device as the main model
+            if hasattr(interactive_predictor, 'model') and interactive_predictor.model is not None:
+                device = processor.device
+                interactive_predictor.model = interactive_predictor.model.to(device)
+                interactive_predictor.model.eval()  # Set to eval mode
+                print(f"✓ Interactive predictor's tracker moved to device: {device}")
+            else:
+                print("ERROR: Interactive predictor's internal model is None!")
+                interactive_predictor = None  # Disable it if broken
         print(f"SAM3 model loaded successfully on {processor.device}")
     except Exception as e:
         print(f"Error loading model: {e}")
@@ -131,6 +140,15 @@ async def upload_image(file: UploadFile = File(...)):
             print("Warning: Model does not have interactive predictor. Point-based segmentation will not be available.")
         else:
             print("✓ Interactive predictor enabled for point-based segmentation")
+            # CRITICAL FIX: Move the tracker model to the same device as the main model
+            if hasattr(interactive_predictor, 'model') and interactive_predictor.model is not None:
+                device = processor.device
+                interactive_predictor.model = interactive_predictor.model.to(device)
+                interactive_predictor.model.eval()  # Set to eval mode
+                print(f"✓ Interactive predictor's tracker moved to device: {device}")
+            else:
+                print("ERROR: Interactive predictor's internal model is None!")
+                interactive_predictor = None  # Disable it if broken
         print(f"SAM3 model loaded successfully on {processor.device}")
 
     try:
