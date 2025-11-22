@@ -537,6 +537,151 @@ async def preview_masks(source: str = "box"):
         raise HTTPException(status_code=500, detail=f"Error generating previews: {str(e)}")
 
 
+@app.post("/segment_direct")
+async def segment_direct(
+    file: UploadFile = File(...),
+    box_center_x: float = 0.5,
+    box_center_y: float = 0.5,
+    box_width: float = 0.3,
+    box_height: float = 0.4,
+    mask_threshold: float = 0.6,
+    confidence_threshold: float = 0.5,
+    text_prompt: Optional[str] = None,
+):
+    """
+    All-in-one endpoint: Upload image + segment + return best masked image
+
+    Args:
+        file: Image file to segment
+        box_center_x: Normalized center X (0.0 - 1.0)
+        box_center_y: Normalized center Y (0.0 - 1.0)
+        box_width: Normalized width (0.0 - 1.0)
+        box_height: Normalized height (0.0 - 1.0)
+        mask_threshold: Quality threshold (0.3 - 0.9, default 0.6)
+        confidence_threshold: Detection confidence (0.1 - 0.9, default 0.5)
+        text_prompt: Optional text description of object
+
+    Returns:
+        PNG image with transparent background (best mask applied)
+    """
+    global model, processor
+
+    # Lazy load model if needed
+    if model is None or processor is None:
+        print("Loading SAM3 model for direct segmentation...")
+        try:
+            model = build_sam3_image_model(enable_inst_interactivity=True)
+            processor = Sam3Processor(model, device="cuda" if torch.cuda.is_available() else "cpu", confidence_threshold=0.5)
+
+            # Exit BFloat16 context if exists
+            if hasattr(model, 'inst_interactive_predictor') and model.inst_interactive_predictor is not None:
+                if hasattr(model.inst_interactive_predictor.model, 'bf16_context'):
+                    try:
+                        model.inst_interactive_predictor.model.bf16_context.__exit__(None, None, None)
+                    except:
+                        pass
+
+            print(f"✓ Model loaded on {processor.device}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
+
+    try:
+        # Read and process image
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents))
+
+        # Convert to RGB if needed
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+
+        print(f"\n=== DIRECT SEGMENTATION REQUEST ===")
+        print(f"Image: {image.size[0]}x{image.size[1]} pixels")
+        print(f"Normalized box: center=({box_center_x:.3f}, {box_center_y:.3f}), size=({box_width:.3f}, {box_height:.3f})")
+        if text_prompt:
+            print(f"Text prompt: '{text_prompt}'")
+
+        # Set image in processor
+        state = processor.set_image(image)
+
+        # Create box prompt
+        box_data = {
+            "center_x": box_center_x,
+            "center_y": box_center_y,
+            "width": box_width,
+            "height": box_height,
+            "label": True
+        }
+
+        # Build prompts for processor
+        prompts = {"boxes": [box_data]}
+        if text_prompt:
+            prompts["text"] = [text_prompt]
+
+        # Run segmentation
+        outputs = processor.process(
+            image=image,
+            prompts=prompts,
+            mask_threshold=mask_threshold,
+            confidence_threshold=confidence_threshold
+        )
+
+        # Extract masks
+        masks_logits = outputs.get("masks")
+        scores = outputs.get("scores")
+
+        if masks_logits is None or len(masks_logits) == 0:
+            raise HTTPException(status_code=404, detail="No objects detected. Try adjusting the box or confidence threshold.")
+
+        # Apply threshold to get binary masks
+        masks = masks_logits > mask_threshold
+
+        # Find best mask (highest score)
+        if scores is not None and len(scores) > 0:
+            best_idx = torch.argmax(scores).item()
+            best_score = scores[best_idx].item()
+            print(f"✓ Selected best mask: {best_idx + 1}/{len(masks)} (score: {best_score:.3f})")
+        else:
+            best_idx = 0
+            best_score = None
+            print(f"✓ Using first mask (no scores available)")
+
+        # Get best mask
+        best_mask = masks[best_idx].squeeze().cpu().numpy()
+
+        # Create masked image (transparent background)
+        img_array = np.array(image)
+
+        # Create RGBA image
+        rgba_image = np.zeros((img_array.shape[0], img_array.shape[1], 4), dtype=np.uint8)
+        rgba_image[:, :, :3] = img_array  # RGB channels
+        rgba_image[:, :, 3] = (best_mask * 255).astype(np.uint8)  # Alpha channel from mask
+
+        # Convert to PIL
+        result_image = Image.fromarray(rgba_image, mode='RGBA')
+
+        # Save to bytes
+        img_byte_arr = io.BytesIO()
+        result_image.save(img_byte_arr, format='PNG')
+        img_byte_arr.seek(0)
+
+        print(f"✓ Returning masked image: {result_image.size[0]}x{result_image.size[1]} RGBA")
+
+        return StreamingResponse(
+            img_byte_arr,
+            media_type="image/png",
+            headers={
+                "Content-Disposition": f"attachment; filename=segmented_{file.filename}",
+                "X-Mask-Score": str(best_score) if best_score is not None else "N/A",
+                "X-Num-Masks": str(len(masks))
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Segmentation failed: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
