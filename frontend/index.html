@@ -1262,15 +1262,20 @@
                 const data = await response.json();
 
                 if (data.status === 'success' && data.masks.length > 0) {
-                    masksPreview.innerHTML = data.masks.map((mask, i) => `
-                        <div class="mask-item">
-                            <h4>Mask ${i + 1} ${mask.score ? `(${(mask.score * 100).toFixed(1)}%)` : ''}</h4>
+                    masksPreview.innerHTML = data.masks.map((mask, i) => {
+                        const rankBadge = mask.rank === 1 ? '<span style="color: #10b981; font-weight: 600;">⭐ BEST</span>' :
+                                         mask.rank === 2 ? '<span style="color: #f59e0b;">Good</span>' :
+                                         '<span style="color: #6b7280;">OK</span>';
+                        const scoreText = mask.score ? `${(mask.score * 100).toFixed(1)}%` : '';
+                        return `
+                        <div class="mask-item" style="${mask.rank === 1 ? 'border: 2px solid #10b981;' : ''}">
+                            <h4>Mask ${i + 1} ${rankBadge} ${scoreText}</h4>
                             <img src="${mask.preview}" class="mask-preview-img" alt="Mask ${i + 1}">
-                            <button class="btn btn-success" onclick="downloadMask(${i}, '${source}')">
+                            <button class="btn btn-success" onclick="downloadMask(${mask.index}, '${source}')">
                                 <span>Download Masked Image</span>
                             </button>
                         </div>
-                    `).join('');
+                    `}).join('');
                 } else {
                     masksPreview.innerHTML = `
                         <div class="empty-state">

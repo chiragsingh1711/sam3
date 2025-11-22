@@ -444,7 +444,21 @@ async def preview_masks(source: str = "box"):
     try:
         mask_previews = []
 
-        for i, mask in enumerate(masks):
+        # Sort masks by score (highest quality first) for point-based segmentation
+        if source == "point" and scores is not None and len(scores) > 0:
+            # Create list of (index, mask, score) tuples
+            mask_score_pairs = list(zip(range(len(masks)), masks, scores))
+            # Sort by score descending (best first)
+            mask_score_pairs.sort(key=lambda x: x[2], reverse=True)
+            sorted_indices = [idx for idx, _, _ in mask_score_pairs]
+            sorted_masks = [mask for _, mask, _ in mask_score_pairs]
+            sorted_scores = [score for _, _, score in mask_score_pairs]
+        else:
+            sorted_indices = list(range(len(masks)))
+            sorted_masks = masks
+            sorted_scores = scores if scores is not None else [None] * len(masks)
+
+        for i, (orig_idx, mask, score) in enumerate(zip(sorted_indices, sorted_masks, sorted_scores)):
             # Get the mask
             if source == "point":
                 mask_np = mask.squeeze()
@@ -474,8 +488,7 @@ async def preview_masks(source: str = "box"):
             img_byte_arr.seek(0)
             img_base64 = base64.b64encode(img_byte_arr.getvalue()).decode()
 
-            # Get score if available
-            score = scores[i] if scores is not None and i < len(scores) else None
+            # Get score (already sorted)
             score_value = float(score) if score is not None else None
 
             # Convert score to Python float if it's a tensor
@@ -483,7 +496,8 @@ async def preview_masks(source: str = "box"):
                 score_value = score_value.item()
 
             mask_previews.append({
-                "index": i,
+                "index": orig_idx,  # Original index for downloading
+                "rank": i + 1,  # Quality rank (1 = best)
                 "score": score_value,
                 "preview": f"data:image/png;base64,{img_base64}"
             })
