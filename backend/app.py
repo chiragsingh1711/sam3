@@ -600,29 +600,39 @@ async def segment_direct(
         if text_prompt:
             print(f"Text prompt: '{text_prompt}'")
 
-        # Set image in processor
+        # EXACT SAME WORKFLOW AS /upload + /segment
+
+        # Step 1: Initial image set (like /upload)
         state = processor.set_image(image)
 
-        # Set confidence threshold
+        # Step 2: Set confidence threshold (like /segment)
         processor.set_confidence_threshold(confidence_threshold)
 
-        # Add text prompt if provided
+        # Step 3: Reset prompts (CRITICAL - was missing!)
+        processor.reset_all_prompts(state)
+
+        # Step 4: Re-set image to get fresh state (CRITICAL - was missing!)
+        state = processor.set_image(image, state)
+
+        # Step 5: Add text prompt if provided
         if text_prompt:
             state = processor.set_text_prompt(text_prompt, state)
 
-        # Add box prompt (as list: [center_x, center_y, width, height])
+        # Step 6: Add box prompt (as list: [center_x, center_y, width, height])
         box = [box_center_x, box_center_y, box_width, box_height]
         state = processor.add_geometric_prompt(box, True, state)
 
-        # Get results
+        # Step 7: Apply custom mask threshold (CRITICAL - store back in state!)
         masks_logits = state.get("masks_logits")
+        if masks_logits is not None:
+            state["masks"] = masks_logits > mask_threshold
+
+        # Step 8: Get final results from state
+        masks = state.get("masks")
         scores = state.get("scores")
 
-        if masks_logits is None or len(masks_logits) == 0:
+        if masks is None or len(masks) == 0:
             raise HTTPException(status_code=404, detail="No objects detected. Try adjusting the box or confidence threshold.")
-
-        # Apply threshold to get binary masks
-        masks = masks_logits > mask_threshold
 
         # Find best mask (highest score)
         if scores is not None and len(scores) > 0:
