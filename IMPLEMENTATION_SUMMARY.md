@@ -114,7 +114,7 @@ best_mask = masks[np.argmax(scores)]
 
 ## 🔧 Troubleshooting
 
-### Issue: Interactive Predictor Not Available
+### Issue 1: Interactive Predictor Not Available
 
 **Problem**: Backend showed warning:
 ```
@@ -128,7 +128,34 @@ Warning: Model does not have interactive predictor. Point-based segmentation wil
 model = build_sam3_image_model(enable_inst_interactivity=True)
 ```
 
-**Code Location**: `backend/app.py` lines 82 and 127
+**Code Location**: `backend/app.py` lines 82 and 135
+
+---
+
+### Issue 2: Tracker Backbone Missing (CRITICAL)
+
+**Problem**: Upload failed with error:
+```
+Error processing image: 'NoneType' object has no attribute 'forward_image'
+```
+
+**Root Cause**: The tracker was being built WITHOUT a backbone (`with_backbone=False` by default), but the tracker's `forward_image()` method at `sam3_tracker_base.py:447` calls:
+```python
+backbone_out = self.backbone.forward_image(img_batch)  # self.backbone was None!
+```
+
+**Fix**: Build the tracker WITH a backbone in `sam3/model_builder.py:615`:
+```python
+sam3_pvs_base = build_tracker(
+    apply_temporal_disambiguation=False,
+    with_backbone=True,  # ← Critical addition!
+    compile_mode=compile_mode
+)
+```
+
+**Why This Happened**: The `build_tracker()` function creates a tracker for video tracking, which can optionally include a backbone for processing frames. For point-based image segmentation, the tracker NEEDS the backbone to process the image and compute embeddings.
+
+**Code Location**: `sam3/model_builder.py` line 615
 
 ---
 
