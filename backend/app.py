@@ -93,6 +93,17 @@ async def startup_event():
                 device = processor.device
                 interactive_predictor.model = interactive_predictor.model.to(device)
                 interactive_predictor.model.eval()  # Set to eval mode
+
+                # CRITICAL FIX: Exit the global BFloat16 context that the tracker entered
+                # The tracker's __init__ enters a bf16 autocast context globally, which breaks
+                # other parts of the code that don't support bf16
+                if hasattr(interactive_predictor.model, 'bf16_context'):
+                    try:
+                        interactive_predictor.model.bf16_context.__exit__(None, None, None)
+                        print("✓ Disabled tracker's global BFloat16 context to prevent conflicts")
+                    except:
+                        pass
+
                 print(f"✓ Interactive predictor's tracker moved to device: {device}")
             else:
                 print("ERROR: Interactive predictor's internal model is None!")
@@ -145,6 +156,17 @@ async def upload_image(file: UploadFile = File(...)):
                 device = processor.device
                 interactive_predictor.model = interactive_predictor.model.to(device)
                 interactive_predictor.model.eval()  # Set to eval mode
+
+                # CRITICAL FIX: Exit the global BFloat16 context that the tracker entered
+                # The tracker's __init__ enters a bf16 autocast context globally, which breaks
+                # other parts of the code that don't support bf16
+                if hasattr(interactive_predictor.model, 'bf16_context'):
+                    try:
+                        interactive_predictor.model.bf16_context.__exit__(None, None, None)
+                        print("✓ Disabled tracker's global BFloat16 context to prevent conflicts")
+                    except:
+                        pass
+
                 print(f"✓ Interactive predictor's tracker moved to device: {device}")
             else:
                 print("ERROR: Interactive predictor's internal model is None!")
@@ -273,16 +295,21 @@ async def segment_with_points(request: PointSegmentRequest):
         point_labels = np.array([p.label for p in request.points], dtype=np.int32)
 
         print(f"\nSegmenting with {len(request.points)} point(s):")
+        print(f"  Image shape: {current_image_np.shape}")
         for p in request.points:
             point_type = "foreground" if p.label == 1 else "background"
-            print(f"  - {point_type} point at ({p.x}, {p.y})")
+            print(f"  - {point_type} point at ({p.x:.1f}, {p.y:.1f})")
 
-        # Run prediction
+        # Run prediction with normalize_coords=True (expects coordinates in original image space)
+        # The coordinates from frontend are in canvas pixel space, which matches image dimensions
         masks, scores, low_res_masks = interactive_predictor.predict(
             point_coords=point_coords,
             point_labels=point_labels,
             multimask_output=request.multimask_output,
+            normalize_coords=True,  # Explicitly set to True (this is the default)
         )
+
+        print(f"  → Generated {len(masks)} masks with scores: {[f'{s:.3f}' for s in scores]}")
 
         # Store results globally
         point_masks = masks
