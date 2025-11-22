@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from sam3.model_builder import build_sam3_image_model
 from sam3.model.sam3_image_processor import Sam3Processor
+from sam3.model.sam1_task_predictor import SAM3InteractiveImagePredictor
 
 # Initialize FastAPI app
 app = FastAPI(title="SAM3 Image Annotation API")
@@ -32,8 +33,12 @@ app.add_middleware(
 # Global state for model and processor
 model = None
 processor = None
+interactive_predictor = None  # For point-based segmentation
 current_state = {}
 current_image = None
+current_image_np = None  # Numpy array for interactive predictor
+point_masks = None  # Store masks from point-based segmentation
+point_scores = None  # Store scores from point-based segmentation
 
 
 class BoxPrompt(BaseModel):
@@ -53,15 +58,31 @@ class SegmentRequest(BaseModel):
     mask_threshold: Optional[float] = 0.6  # Binarize masks (higher = cleaner, try 0.6-0.8)
 
 
+class PointPrompt(BaseModel):
+    """Single point prompt"""
+    x: float  # X coordinate in pixels
+    y: float  # Y coordinate in pixels
+    label: int  # 1 for foreground, 0 for background
+
+
+class PointSegmentRequest(BaseModel):
+    """Request for point-based segmentation"""
+    points: List[PointPrompt]
+    multimask_output: bool = True  # Return 3 candidate masks
+    mask_threshold: Optional[float] = 0.0  # Threshold for binarizing mask
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize SAM3 model on startup"""
-    global model, processor
+    global model, processor, interactive_predictor
     print("Loading SAM3 model...")
     try:
         model = build_sam3_image_model()
         # Use higher default confidence threshold for better quality
         processor = Sam3Processor(model, device="cuda" if torch.cuda.is_available() else "cpu", confidence_threshold=0.5)
+        # Initialize interactive predictor for point-based segmentation
+        interactive_predictor = SAM3InteractiveImagePredictor(model)
         print(f"SAM3 model loaded successfully on {processor.device}")
     except Exception as e:
         print(f"Error loading model: {e}")
@@ -92,13 +113,14 @@ async def health():
 @app.post("/upload")
 async def upload_image(file: UploadFile = File(...)):
     """Upload an image for annotation"""
-    global current_state, current_image, model, processor
+    global current_state, current_image, current_image_np, model, processor, interactive_predictor
 
     # Lazy load model if not loaded during startup
     if model is None:
         print("Loading SAM3 model...")
         model = build_sam3_image_model()
         processor = Sam3Processor(model, device="cuda" if torch.cuda.is_available() else "cpu", confidence_threshold=0.5)
+        interactive_predictor = SAM3InteractiveImagePredictor(model)
         print(f"SAM3 model loaded successfully on {processor.device}")
 
     try:
@@ -110,11 +132,17 @@ async def upload_image(file: UploadFile = File(...)):
         if image.mode != "RGB":
             image = image.convert("RGB")
 
-        # Store image
+        # Store image (PIL for box-based, numpy for point-based)
         current_image = image
+        current_image_np = np.array(image)
 
-        # Set image in processor
+        # Set image in box-based processor
         current_state = processor.set_image(image)
+
+        # Set image in interactive predictor (computes embeddings)
+        print("Computing image embeddings for interactive segmentation...")
+        interactive_predictor.set_image(current_image_np)
+        print("✓ Image embeddings computed")
 
         return {
             "status": "success",
@@ -194,24 +222,90 @@ async def segment_image(request: SegmentRequest):
         raise HTTPException(status_code=500, detail=f"Error during segmentation: {str(e)}")
 
 
+@app.post("/segment_points")
+async def segment_with_points(request: PointSegmentRequest):
+    """Segment image using point prompts (interactive segmentation)"""
+    global point_masks, point_scores, interactive_predictor, current_image_np
+
+    if current_image_np is None:
+        raise HTTPException(status_code=400, detail="No image uploaded. Please upload an image first.")
+
+    if len(request.points) == 0:
+        raise HTTPException(status_code=400, detail="At least one point is required.")
+
+    try:
+        # Prepare points
+        point_coords = np.array([[p.x, p.y] for p in request.points], dtype=np.float32)
+        point_labels = np.array([p.label for p in request.points], dtype=np.int32)
+
+        print(f"\nSegmenting with {len(request.points)} point(s):")
+        for p in request.points:
+            point_type = "foreground" if p.label == 1 else "background"
+            print(f"  - {point_type} point at ({p.x}, {p.y})")
+
+        # Run prediction
+        masks, scores, low_res_masks = interactive_predictor.predict(
+            point_coords=point_coords,
+            point_labels=point_labels,
+            multimask_output=request.multimask_output,
+        )
+
+        # Store results globally
+        point_masks = masks
+        point_scores = scores
+
+        # Select best mask if multimask output
+        if request.multimask_output and len(scores) > 0:
+            best_idx = np.argmax(scores)
+            print(f"  → Selected mask {best_idx + 1}/{len(scores)} (score: {scores[best_idx]:.3f})")
+        else:
+            best_idx = 0
+
+        return {
+            "status": "success",
+            "num_masks": len(masks),
+            "scores": scores.tolist(),
+            "best_mask_index": int(best_idx),
+            "message": f"Segmented with {len(request.points)} point(s)"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error during point-based segmentation: {str(e)}")
+
+
 @app.get("/download_mask")
-async def download_mask(mask_index: int = 0):
-    """Download a specific mask as a binary image"""
-    global current_state, current_image
+async def download_mask(mask_index: int = 0, source: str = "box"):
+    """Download a specific mask as a binary image
+
+    Args:
+        mask_index: Index of the mask to download
+        source: 'box' for box-based masks or 'point' for point-based masks
+    """
+    global current_state, current_image, point_masks
 
     if current_image is None:
         raise HTTPException(status_code=400, detail="No image uploaded")
 
-    masks = current_state.get("masks")
-    if masks is None or len(masks) == 0:
-        raise HTTPException(status_code=400, detail="No masks available. Please segment first.")
+    # Get masks based on source
+    if source == "point":
+        masks = point_masks
+        if masks is None or len(masks) == 0:
+            raise HTTPException(status_code=400, detail="No point-based masks available. Please segment with points first.")
+    else:
+        masks = current_state.get("masks")
+        if masks is None or len(masks) == 0:
+            raise HTTPException(status_code=400, detail="No masks available. Please segment first.")
 
     if mask_index >= len(masks):
         raise HTTPException(status_code=400, detail=f"Invalid mask index. Only {len(masks)} masks available.")
 
     try:
         # Get the mask
-        mask = masks[mask_index].squeeze().cpu().numpy()
+        if source == "point":
+            # Point-based masks are already numpy arrays
+            mask = masks[mask_index].squeeze()
+        else:
+            # Box-based masks are tensors
+            mask = masks[mask_index].squeeze().cpu().numpy()
 
         # Convert to PIL Image (binary)
         mask_image = Image.fromarray((mask * 255).astype(np.uint8), mode='L')
@@ -231,23 +325,39 @@ async def download_mask(mask_index: int = 0):
 
 
 @app.get("/download_masked_image")
-async def download_masked_image(mask_index: int = 0):
-    """Download the original image with mask applied (masked region shown, rest transparent)"""
-    global current_state, current_image
+async def download_masked_image(mask_index: int = 0, source: str = "box"):
+    """Download the original image with mask applied (masked region shown, rest transparent)
+
+    Args:
+        mask_index: Index of the mask to download
+        source: 'box' for box-based masks or 'point' for point-based masks
+    """
+    global current_state, current_image, point_masks
 
     if current_image is None:
         raise HTTPException(status_code=400, detail="No image uploaded")
 
-    masks = current_state.get("masks")
-    if masks is None or len(masks) == 0:
-        raise HTTPException(status_code=400, detail="No masks available. Please segment first.")
+    # Get masks based on source
+    if source == "point":
+        masks = point_masks
+        if masks is None or len(masks) == 0:
+            raise HTTPException(status_code=400, detail="No point-based masks available. Please segment with points first.")
+    else:
+        masks = current_state.get("masks")
+        if masks is None or len(masks) == 0:
+            raise HTTPException(status_code=400, detail="No masks available. Please segment first.")
 
     if mask_index >= len(masks):
         raise HTTPException(status_code=400, detail=f"Invalid mask index. Only {len(masks)} masks available.")
 
     try:
         # Get the mask
-        mask = masks[mask_index].squeeze().cpu().numpy()
+        if source == "point":
+            # Point-based masks are already numpy arrays
+            mask = masks[mask_index].squeeze()
+        else:
+            # Box-based masks are tensors
+            mask = masks[mask_index].squeeze().cpu().numpy()
 
         # Convert original image to RGBA
         img_rgba = current_image.convert("RGBA")
@@ -274,23 +384,38 @@ async def download_masked_image(mask_index: int = 0):
 
 
 @app.get("/preview_masks")
-async def preview_masks():
-    """Get base64 encoded preview of all masks overlaid on the image"""
-    global current_state, current_image
+async def preview_masks(source: str = "box"):
+    """Get base64 encoded preview of all masks overlaid on the image
+
+    Args:
+        source: 'box' for box-based masks or 'point' for point-based masks
+    """
+    global current_state, current_image, point_masks, point_scores
 
     if current_image is None:
         raise HTTPException(status_code=400, detail="No image uploaded")
 
-    masks = current_state.get("masks")
-    if masks is None or len(masks) == 0:
-        return {"status": "no_masks", "masks": []}
+    # Get masks and scores based on source
+    if source == "point":
+        masks = point_masks
+        scores = point_scores
+        if masks is None or len(masks) == 0:
+            return {"status": "no_masks", "masks": []}
+    else:
+        masks = current_state.get("masks")
+        scores = current_state.get("scores")
+        if masks is None or len(masks) == 0:
+            return {"status": "no_masks", "masks": []}
 
     try:
         mask_previews = []
 
         for i, mask in enumerate(masks):
             # Get the mask
-            mask_np = mask.squeeze().cpu().numpy()
+            if source == "point":
+                mask_np = mask.squeeze()
+            else:
+                mask_np = mask.squeeze().cpu().numpy()
 
             # Convert original image to RGBA
             img_rgba = current_image.convert("RGBA")
@@ -315,8 +440,17 @@ async def preview_masks():
             img_byte_arr.seek(0)
             img_base64 = base64.b64encode(img_byte_arr.getvalue()).decode()
 
+            # Get score if available
+            score = scores[i] if scores is not None and i < len(scores) else None
+            score_value = float(score) if score is not None else None
+
+            # Convert score to Python float if it's a tensor
+            if hasattr(score_value, 'item'):
+                score_value = score_value.item()
+
             mask_previews.append({
                 "index": i,
+                "score": score_value,
                 "preview": f"data:image/png;base64,{img_base64}"
             })
 
