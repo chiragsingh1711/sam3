@@ -171,7 +171,7 @@ async def upload_image(file: UploadFile = File(...)):
         if interactive_predictor is not None:
             print("Computing image embeddings for interactive segmentation...")
             interactive_predictor.set_image(current_image_np)
-            print("✓ Image embeddings computed")
+            print("✓ Image embeddings computed successfully")
         else:
             print("Note: Interactive predictor not available, point-based segmentation disabled")
 

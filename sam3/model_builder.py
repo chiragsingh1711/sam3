@@ -611,7 +611,8 @@ def build_sam3_image_model(
     # Create geometry encoder
     input_geometry_encoder = _create_geometry_encoder()
     if enable_inst_interactivity:
-        sam3_pvs_base = build_tracker(apply_temporal_disambiguation=False)
+        # Build tracker WITH backbone for point-based segmentation (needed for forward_image)
+        sam3_pvs_base = build_tracker(apply_temporal_disambiguation=False, with_backbone=True, compile_mode=compile_mode)
         inst_predictor = SAM3InteractiveImagePredictor(sam3_pvs_base)
     else:
         inst_predictor = None
