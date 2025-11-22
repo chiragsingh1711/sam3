@@ -78,13 +78,16 @@ async def startup_event():
     global model, processor, interactive_predictor
     print("Loading SAM3 model...")
     try:
-        model = build_sam3_image_model()
+        # Enable instance interactivity for point-based segmentation
+        model = build_sam3_image_model(enable_inst_interactivity=True)
         # Use higher default confidence threshold for better quality
         processor = Sam3Processor(model, device="cuda" if torch.cuda.is_available() else "cpu", confidence_threshold=0.5)
         # Use the built-in interactive predictor from the model
         interactive_predictor = model.inst_interactive_predictor
         if interactive_predictor is None:
             print("Warning: Model does not have interactive predictor. Point-based segmentation will not be available.")
+        else:
+            print("✓ Interactive predictor enabled for point-based segmentation")
         print(f"SAM3 model loaded successfully on {processor.device}")
     except Exception as e:
         print(f"Error loading model: {e}")
@@ -120,11 +123,14 @@ async def upload_image(file: UploadFile = File(...)):
     # Lazy load model if not loaded during startup
     if model is None:
         print("Loading SAM3 model...")
-        model = build_sam3_image_model()
+        # Enable instance interactivity for point-based segmentation
+        model = build_sam3_image_model(enable_inst_interactivity=True)
         processor = Sam3Processor(model, device="cuda" if torch.cuda.is_available() else "cpu", confidence_threshold=0.5)
         interactive_predictor = model.inst_interactive_predictor
         if interactive_predictor is None:
             print("Warning: Model does not have interactive predictor. Point-based segmentation will not be available.")
+        else:
+            print("✓ Interactive predictor enabled for point-based segmentation")
         print(f"SAM3 model loaded successfully on {processor.device}")
 
     try:

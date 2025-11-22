@@ -107,6 +107,28 @@ best_mask = masks[np.argmax(scores)]
 ### Commits:
 1. "Add point-based interactive segmentation backend API"
 2. "Add comprehensive point-based segmentation analysis"
+3. "Add implementation summary for point-based segmentation"
+4. "Enable interactive predictor for point-based segmentation" (pending)
+
+---
+
+## 🔧 Troubleshooting
+
+### Issue: Interactive Predictor Not Available
+
+**Problem**: Backend showed warning:
+```
+Warning: Model does not have interactive predictor. Point-based segmentation will not be available.
+```
+
+**Root Cause**: The `build_sam3_image_model()` function has a parameter `enable_inst_interactivity` that defaults to `False`. When this is False, the interactive predictor is not created.
+
+**Fix**: Pass `enable_inst_interactivity=True` when building the model:
+```python
+model = build_sam3_image_model(enable_inst_interactivity=True)
+```
+
+**Code Location**: `backend/app.py` lines 82 and 127
 
 ---
 
