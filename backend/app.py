@@ -647,16 +647,16 @@ async def segment_direct(
         # Get best mask
         best_mask = masks[best_idx].squeeze().cpu().numpy()
 
-        # Create masked image (transparent background)
-        img_array = np.array(image)
+        # Create masked image (EXACT SAME as /download_masked_image)
+        # Convert original image to RGBA
+        img_rgba = image.convert("RGBA")
+        img_array = np.array(img_rgba)
 
-        # Create RGBA image
-        rgba_image = np.zeros((img_array.shape[0], img_array.shape[1], 4), dtype=np.uint8)
-        rgba_image[:, :, :3] = img_array  # RGB channels
-        rgba_image[:, :, 3] = (best_mask * 255).astype(np.uint8)  # Alpha channel from mask
+        # Apply mask (keep masked region, make rest transparent)
+        img_array[:, :, 3] = (best_mask * 255).astype(np.uint8)
 
-        # Convert to PIL
-        result_image = Image.fromarray(rgba_image, mode='RGBA')
+        # Create masked image
+        result_image = Image.fromarray(img_array, mode='RGBA')
 
         # Save to bytes
         img_byte_arr = io.BytesIO()
