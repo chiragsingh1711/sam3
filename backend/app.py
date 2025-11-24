@@ -648,16 +648,22 @@ async def segment_direct(
             best_score = None
             print(f"✓ Using first mask (no scores available)")
 
-        # Get best mask (EXACT SAME as /download_masked_image)
+        # Get best mask
         best_mask = masks[best_idx].squeeze().cpu().numpy()
 
-        # Create masked image (EXACT SAME as /download_masked_image)
-        # Convert original image to RGBA (use global current_image)
+        # Create masked image with black background (no transparency)
+        # Convert original image to RGBA
         img_rgba = current_image.convert("RGBA")
         img_array = np.array(img_rgba)
 
-        # Apply mask (keep masked region, make rest transparent)
-        img_array[:, :, 3] = (best_mask * 255).astype(np.uint8)
+        # Expand mask to 3 channels for RGB manipulation
+        mask_3d = best_mask[:, :, np.newaxis]
+
+        # Apply mask: keep original RGB where mask=1, set to black where mask=0
+        img_array[:, :, 0:3] = img_array[:, :, 0:3] * mask_3d
+
+        # Set all alpha to 255 (fully opaque, no transparency - black background)
+        img_array[:, :, 3] = 255
 
         # Create masked image
         result_image = Image.fromarray(img_array, mode='RGBA')
